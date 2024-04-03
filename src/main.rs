@@ -231,8 +231,7 @@ async fn main() -> Result<()> {
 
   info!("number of all jorei: {all_size}");
 
-  //let mut stream = tokio_stream::iter(0..=(all_size / args.rows));
-  let mut stream = tokio_stream::iter(0..=1);
+  let mut stream = tokio_stream::iter(0..=(all_size / args.rows));
   while let Some(n) = stream.next().await {
     let list_api_url = gen_list_url(start, end, n, args.rows);
 
