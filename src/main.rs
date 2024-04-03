@@ -41,20 +41,20 @@ use tracing::*;
 
 #[derive(Debug, Clone, Parser)]
 struct AppArgs {
-  /// 検索する範囲の始端を<year>-<month>-<date>形式で与える
+  /// 検索する年の範囲の始端を与える
   #[clap(short, long)]
   start: Option<usize>,
-  /// 検索する範囲の終端を<year>-<month>-<date>形式で与える
+  /// 検索する年の範囲の終端を与える
   #[clap(short, long)]
   end: Option<usize>,
   /// 出力先のフォルダ
   #[clap(short, long)]
   output: String,
   /// 一回のAPIアクセスで取得する値で、大きければ大きいほど相手のサーバに負担がかかる
-  #[clap(default_value = "50")]
+  #[clap(short, long, default_value = "50")]
   rows: usize,
   /// 一回のrowについてのAPIアクセスが行われるたびにsleepする時間（ミリ秒）
-  #[clap(default_value = "500")]
+  #[clap(short, long, default_value = "500")]
   sleep_time: u64,
 }
 
