@@ -81,8 +81,11 @@ fn gen_jorei_url(id: &str) -> String {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct JoreiInfoListResponseDocs {
+  #[serde(default)]
   collection: Vec<String>,
+  #[serde(default)]
   collected_date: Vec<String>,
+  #[serde(default)]
   updated_date: Vec<String>,
   municipality_id: String,
   prefecture: Option<String>,
@@ -119,8 +122,11 @@ struct JoreiListResponse {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct JoreiInfoDocs {
+  #[serde(default)]
   collection: Vec<String>,
+  #[serde(default)]
   collected_date: Vec<String>,
+  #[serde(default)]
   updated_date: Vec<String>,
   municipality_id: String,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -153,8 +159,10 @@ struct JoreiInfoDocs {
   reiki_url: Option<String>,
   has_version: bool,
   file_type: String,
+  #[serde(default)]
   h_type: Vec<String>,
-  content: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  content: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   collected_date_s: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,7 +233,7 @@ async fn main() -> Result<()> {
       let jorei_info: JoreiInfoResponse = client.get(&api_url).send().await?.json().await?;
       let docs = &jorei_info.response.docs[0];
       write_docs(&args.output, id, docs).await?;
-      info!("done: {}({})", docs.title, docs.id);
+      info!("done: {}({}) at ({})", docs.title, docs.id, docs.clone().announcement_date_s.unwrap_or("None".to_string()));
     }
     // 負荷を抑えるために500ミリ秒待つ
     info!("sleep");
