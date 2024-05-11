@@ -208,6 +208,7 @@ async fn write_docs(output: &str, id: &str, data: &JoreiData) -> Result<()> {
   let mut buf = File::create(format!("{output}/{id}.json")).await?;
   let s = serde_json::to_string_pretty(&data)?;
   buf.write_all(s.as_bytes()).await?;
+  buf.flush().await?;
   Ok(())
 }
 
