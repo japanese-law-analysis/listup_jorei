@@ -14,7 +14,7 @@ cargo install --git "https://github.com/japanese-law-analysis/listup_jorei.git"
 ### 使い方
 
 ```sh
-listup_jorei --output output --start 2022-01-01 --end 2022-12-31 --rows 50 --sleep-time 500
+listup_jorei --output output --index index --start 2022-01-01 --end 2022-12-31 --rows 50 --sleep-time 500
 ```
 
 で起動します。
@@ -22,8 +22,9 @@ listup_jorei --output output --start 2022-01-01 --end 2022-12-31 --rows 50 --sle
 オプションの各意味は以下のとおりです。
 
 - `--output`：解析で生成した情報を出力するフォルダ
-- `--start`：日時範囲の始端（オプション）
-- `--end`：日時範囲の終端（オプション）
+- `--index`：条例の情報の一覧を出力するファイル
+- `--start`：年範囲の始端（オプション）
+- `--end`：年範囲の終端（オプション）
 - `--rows`：一度の処理の重さ（オプション）
 - `--sleep-time`：一度の処理ごとに挟まるスリープ時間（オプション）
 
