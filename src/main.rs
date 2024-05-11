@@ -32,7 +32,13 @@
 //!
 
 use anyhow::Result;
+use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Utc};
 use clap::Parser;
+use jplaw_data_types::{
+  law::Date,
+  listup::{JoreiData, JoreiInfo},
+};
+use jplaw_io::{flush_file_value_lst, gen_file_value_lst, init_logger, write_value_lst};
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -47,7 +53,10 @@ struct AppArgs {
   /// 検索する年の範囲の終端を与える
   #[clap(short, long)]
   end: Option<usize>,
-  /// 出力先のフォルダ
+  /// 出力する一覧ファイル名
+  #[clap(short, long)]
+  index: String,
+  /// JSONデータの出力先フォルダ
   #[clap(short, long)]
   output: String,
   /// 一回のAPIアクセスで取得する値で、大きければ大きいほど相手のサーバに負担がかかる
@@ -80,13 +89,13 @@ fn gen_jorei_url(id: &str) -> String {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct JoreiInfoListResponseDocs {
+struct JoreiInfoResponseDocs {
   #[serde(default)]
   collection: Vec<String>,
   #[serde(default)]
   collected_date: Vec<String>,
   #[serde(default)]
-  updated_date: Vec<String>,
+  updated_date: Vec<DateTime<Utc>>,
   municipality_id: String,
   prefecture: Option<String>,
   city: Option<String>,
@@ -98,106 +107,106 @@ struct JoreiInfoListResponseDocs {
   reiki_id: String,
   h1: Option<String>,
   title: String,
-  announcement_date: Option<String>,
+  announcement_date: Option<DateTime<Utc>>,
   r#type: String,
-  last_updated_date: Option<String>,
+  last_updated_date: Option<DateTime<Utc>>,
   reiki_dates: Option<Vec<String>>,
   reiki_numbers: Option<Vec<String>>,
-  original_url: Option<String>,
-  has_version: bool,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct JoreiInfoListResponse {
-  #[serde(rename = "numFound")]
-  num_found: usize,
-  start: usize,
-  docs: Vec<JoreiInfoListResponseDocs>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct JoreiListResponse {
-  response: JoreiInfoListResponse,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct JoreiInfoDocs {
-  #[serde(default)]
-  collection: Vec<String>,
-  #[serde(default)]
-  collected_date: Vec<String>,
-  #[serde(default)]
-  updated_date: Vec<String>,
-  municipality_id: String,
   #[serde(skip_serializing_if = "Option::is_none")]
-  prefecture: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  city: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  prefecture_kana: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  city_kana: Option<String>,
-  municipality_type: String,
-  area: String,
-  id: String,
-  reiki_id: String,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  h1: Option<String>,
-  title: String,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  announcement_date: Option<String>,
-  r#type: String,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  last_updated_date: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  reiki_dates: Option<Vec<String>>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  reiki_numbers: Option<Vec<String>>,
-  #[serde(skip_serializing_if = "Option::is_none")]
+  update_count: Option<usize>,
   original_url: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   reiki_url: Option<String>,
   has_version: bool,
-  file_type: String,
-  #[serde(default)]
+  #[serde(skip_serializing_if = "Option::is_none")]
+  file_type: Option<String>,
+  #[serde(skip_serializing_if = "Vec::is_empty", default)]
   h_type: Vec<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   content: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
-  collected_date_s: Option<String>,
+  pub collected_date_s: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
-  announcement_date_s: Option<String>,
+  pub announcement_date_s: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
-  last_updated_date_s: Option<String>,
+  pub last_updated_date_s: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
-  updated_date_s: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct JoreiInfo {
-  #[serde(rename = "numFound")]
-  num_found: usize,
-  start: usize,
-  docs: Vec<JoreiInfoDocs>,
+  pub updated_date_s: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct JoreiInfoResponse {
-  response: JoreiInfo,
+  #[serde(rename = "numFound")]
+  num_found: usize,
+  start: usize,
+  docs: Vec<JoreiInfoResponseDocs>,
 }
 
-async fn write_docs(output: &str, id: &str, docs: &JoreiInfoDocs) -> Result<()> {
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct JoreiApiResponse {
+  response: JoreiInfoResponse,
+}
+
+fn utc_to_date(datatime: &DateTime<Utc>) -> Date {
+  let offset = FixedOffset::east_opt(9 * 3600).unwrap();
+  let local = offset.from_utc_datetime(&datatime.naive_utc());
+  Date::gen_from_ad(
+    local.year() as usize,
+    local.month() as usize,
+    local.day() as usize,
+  )
+}
+
+async fn gen_jorei_data(docs: &JoreiInfoResponseDocs) -> JoreiData {
+  JoreiData {
+    collection: docs.collection.clone(),
+    collected_date: docs.collected_date.clone(),
+    updated_date: docs.updated_date.iter().map(utc_to_date).collect(),
+    municipality_id: docs.municipality_id.clone(),
+    prefecture: docs.prefecture.clone(),
+    city: docs.city.clone(),
+    prefecture_kana: docs.prefecture_kana.clone(),
+    city_kana: docs.city_kana.clone(),
+    municipality_type: docs.municipality_type.clone(),
+    area: docs.area.clone(),
+    id: docs.id.clone(),
+    reiki_id: docs.reiki_id.clone(),
+    h1: docs.h1.clone(),
+    title: docs.title.clone(),
+    announcement_date: docs.announcement_date.map(|t| utc_to_date(&t)),
+    jorei_type: docs.r#type.clone(),
+    last_updated_date: docs.last_updated_date.map(|t| utc_to_date(&t)),
+    reiki_dates: docs.reiki_dates.clone(),
+    reiki_numbers: docs.reiki_numbers.clone(),
+    original_url: docs.original_url.clone(),
+    reiki_url: docs.reiki_url.clone(),
+    has_version: docs.has_version,
+    file_type: docs.file_type.clone().unwrap(),
+    h_type: docs.h_type.clone(),
+    content: docs.content.clone(),
+    collected_date_s: docs.collected_date_s.clone(),
+    announcement_date_s: docs.announcement_date_s.clone(),
+    last_updated_date_s: docs.last_updated_date_s.clone(),
+    updated_date_s: docs.updated_date_s.clone(),
+  }
+}
+
+async fn gen_jorei_info(docs: &JoreiInfoResponseDocs) -> JoreiInfo {
+  JoreiInfo {
+    title: docs.title.clone(),
+    reiki_id: docs.reiki_id.clone(),
+    id: docs.id.clone(),
+    prefecture: docs.prefecture.clone(),
+    city: docs.city.clone(),
+    announcement_date: docs.announcement_date.map(|t| utc_to_date(&t)),
+    updated_date: docs.last_updated_date.map(|t| utc_to_date(&t)),
+  }
+}
+
+async fn write_docs(output: &str, id: &str, data: &JoreiData) -> Result<()> {
   let mut buf = File::create(format!("{output}/{id}.json")).await?;
-  let s = serde_json::to_string_pretty(&docs)?;
+  let s = serde_json::to_string_pretty(&data)?;
   buf.write_all(s.as_bytes()).await?;
-  Ok(())
-}
-
-async fn init_logger() -> Result<()> {
-  let subscriber = tracing_subscriber::fmt()
-    .with_max_level(tracing::Level::INFO)
-    .finish();
-  tracing::subscriber::set_global_default(subscriber)?;
   Ok(())
 }
 
@@ -214,31 +223,45 @@ async fn main() -> Result<()> {
 
   let first_api_url = gen_list_url(args.start, args.end, 0, args.rows);
 
-  let first_resp: JoreiListResponse = client.get(&first_api_url).send().await?.json().await?;
+  let first_resp: JoreiApiResponse = client.get(&first_api_url).send().await?.json().await?;
   let first_resp = first_resp.response;
 
   let all_size = first_resp.num_found;
 
   info!("number of all jorei: {all_size}");
 
+  let mut index_file = gen_file_value_lst(&args.index).await?;
+
   let mut stream = tokio_stream::iter(0..=(all_size / args.rows));
   while let Some(n) = stream.next().await {
     let list_api_url = gen_list_url(args.start, args.end, n, args.rows);
 
-    let list_resp: JoreiListResponse = client.get(&list_api_url).send().await?.json().await?;
+    let list_resp: JoreiApiResponse = client.get(&list_api_url).send().await?.json().await?;
     let id_lst = list_resp.response.docs.iter().map(|d| &d.id);
     let mut id_stream = tokio_stream::iter(id_lst);
     while let Some(id) = id_stream.next().await {
       let api_url = gen_jorei_url(id);
-      let jorei_info: JoreiInfoResponse = client.get(&api_url).send().await?.json().await?;
+      let jorei_info: JoreiApiResponse = client.get(&api_url).send().await?.json().await?;
       let docs = &jorei_info.response.docs[0];
-      write_docs(&args.output, id, docs).await?;
-      info!("done: {}({}) at ({})", docs.title, docs.id, docs.clone().announcement_date_s.unwrap_or("None".to_string()));
+      let data = gen_jorei_data(docs).await;
+      write_docs(&args.output, id, &data).await?;
+      let info = gen_jorei_info(docs).await;
+      write_value_lst(&mut index_file, info).await?;
+      info!(
+        "done: {}({}) at ({})",
+        docs.title,
+        docs.id,
+        docs
+          .clone()
+          .announcement_date_s
+          .unwrap_or("None".to_string())
+      );
     }
     // 負荷を抑えるために500ミリ秒待つ
     info!("sleep");
     tokio::time::sleep(tokio::time::Duration::from_millis(args.sleep_time)).await;
   }
+  flush_file_value_lst(&mut index_file).await?;
   info!("all done");
   Ok(())
 }
