@@ -32,7 +32,7 @@
 //! (c) 2024 Naoki Kaneko (a.k.a. "puripuri2100")
 //!
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Utc};
 use clap::Parser;
 use jplaw_data_types::{
@@ -45,27 +45,76 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tracing::*;
+use regex::Regex;
 
 #[derive(Debug, Clone, Parser)]
 struct AppArgs {
-  /// 検索する年の範囲の始端を与える
+  /// 検索する年の範囲の始端を与える yyyyMMdd形式・yyyy-MM-dd形式・yyyy/MM/dd形式で記述
   #[clap(short, long)]
-  start: Option<usize>,
-  /// 検索する年の範囲の終端を与える
+  start: Option<String>,
+  /// 検索する年の範囲の終端を与える yyyyMMdd形式・yyyy-MM-dd形式・yyyy/MM/dd形式で記述
   #[clap(short, long)]
-  end: Option<usize>,
+  end: Option<String>,
   /// 出力する一覧ファイル名
   #[clap(short, long)]
   index: String,
-  /// JSONデータの出力先フォルダ
+  /// 条例の詳細情報が書かれたJSONファイルの出力先フォルダ
   #[clap(short, long)]
   output: String,
   /// 一回のAPIアクセスで取得する値で、大きければ大きいほど相手のサーバに負担がかかる
   #[clap(short, long, default_value = "50")]
   rows: usize,
   /// 一回のrowについてのAPIアクセスが行われるたびにsleepする時間（ミリ秒）
-  #[clap(short, long, default_value = "500")]
+  #[clap(long, default_value = "500")]
   sleep_time: u64,
+}
+
+fn parse_date(str: &str) -> Result<usize> {
+  let re1 = Regex::new("(?<y>[0-9]{4})/(?<m>[0-9]{2})/(?<d>[0-9]{2})").unwrap();
+let re2 = Regex::new("(?<y>[0-9]{4})-(?<m>[0-9]{2})-(?<d>[0-9]{2})").unwrap();
+let re3 = Regex::new("(?<y>[0-9]{4})(?<m>[0-9]{2})(?<d>[0-9]{2})").unwrap();
+
+if let Some(caps) = re1.captures(str) {
+  let y = &caps["y"];
+  let y = y.parse::<usize>()?;
+  let m = &caps["m"];
+  let m = m.parse::<usize>()?;
+  let d = &caps["d"];
+  let d = d.parse::<usize>()?;
+  if 12 < m || 31 < d {
+    Err(anyhow!("日付が範囲外です"))
+  } else {
+    Ok(d + m * 100 + y * 10000)
+  }
+} else if let Some(caps) = re2.captures(str) {
+  let y = &caps["y"];
+  let y = y.parse::<usize>()?;
+  let m = &caps["m"];
+  let m = m.parse::<usize>()?;
+  let d = &caps["d"];
+  let d = d.parse::<usize>()?;
+  if 12 < m || 31 < d {
+    return Err(anyhow!("日付が範囲外です"));
+  } else {
+    Ok(d + m * 100 + y * 10000)
+  }
+} else if let Some(caps) = re3.captures(str) {
+  let y = &caps["y"];
+  let y = y.parse::<usize>()?;
+  let m = &caps["m"];
+  let m = m.parse::<usize>()?;
+  let d = &caps["d"];
+  let d = d.parse::<usize>()?;
+  if 12 < m || 31 < d {
+    return Err(anyhow!("日付が範囲外です"));
+  } else {
+    Ok(d + m * 100 + y * 10000)
+  }
+} else {
+  Err(anyhow!(
+    "対応していない日付のフォーマットです。対応フォーマット：yyyy/MM/dd, yyyy-MM-dd, yyyyMMdd"
+  ))
+}
 }
 
 fn gen_list_url(start: Option<usize>, end: Option<usize>, n: usize, rows: usize) -> String {
@@ -223,7 +272,10 @@ async fn main() -> Result<()> {
     .danger_accept_invalid_certs(true)
     .build()?;
 
-  let first_api_url = gen_list_url(args.start, args.end, 0, args.rows);
+  let start_date = args.start.and_then(|s| parse_date(&s).ok());
+  let end_date = args.end.and_then(|s| parse_date(&s).ok());
+  println!("{start_date:?}, {end_date:?}");
+  let first_api_url = gen_list_url(start_date, end_date, 0, args.rows);
 
   let first_resp: JoreiApiResponse = client.get(&first_api_url).send().await?.json().await?;
   let first_resp = first_resp.response;
@@ -236,7 +288,7 @@ async fn main() -> Result<()> {
 
   let mut stream = tokio_stream::iter(0..=(all_size / args.rows));
   while let Some(n) = stream.next().await {
-    let list_api_url = gen_list_url(args.start, args.end, n, args.rows);
+    let list_api_url = gen_list_url(start_date, end_date, n, args.rows);
 
     let list_resp: JoreiApiResponse = client.get(&list_api_url).send().await?.json().await?;
     let id_lst = list_resp.response.docs.iter().map(|d| &d.id);

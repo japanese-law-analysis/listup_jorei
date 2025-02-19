@@ -15,7 +15,6 @@ rust-version = "1.70.0"
 anyhow = "1.0.79"
 clap = { version = "4.4.18", features = ["derive"] }
 regex = "1.10.3"
-reqwest = { version = "0.11.23", features = ["json"] }
 serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
 tokio = { version = "1.35.1", features = ["full"] }
@@ -24,3 +23,4 @@ tracing = "0.1.40"
 jplaw_io = { git = "https://github.com/japanese-law-analysis/jplaw_tools.git", rev = "0c06bad" }
 jplaw_data_types = { git = "https://github.com/japanese-law-analysis/jplaw_tools.git", rev = "0c06bad" }
 chrono = { version = "0.4.38", features = ["serde"] }
+reqwest = { version = "0.12.12", features = ["json"] }
